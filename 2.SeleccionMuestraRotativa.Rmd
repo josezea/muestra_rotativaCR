@@ -1,0 +1,731 @@
+---
+title: "Untitled"
+author: "José Fernando Zea"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+Cargar los paquetes:
+
+```{r}
+library(dplyr)
+library(writexl)
+library(readxl)
+library(tictoc)
+```
+
+Cargamos los scripts necesarios:
+
+
+```{r}
+setwd("scripts")
+
+# EJecución de insumos necesarios paneles rotativos
+source("utils_minimal_block500.R")
+source("utils_row_500.R")
+source("utils_test_contigous500.R")
+source("panel500.R")
+
+# Nos traemos los siguientes dataframes:
+# df_paneles1raFila_HijosNoRefresco
+# df_panelesRefresco_Hijos
+# df_panelesSustituidos_Hijos
+source("lectura_insumos_esquema_rotacion.R")
+
+
+# Script para redistribuir UPMs en los paneles 
+# Se respeta el tamaño de las UPMs a repartir y los paneles quedan con un número enteros de UPMs)
+source("redistribution_PSU_sample.R")
+
+# Script necesario para generar números de Pareto
+source("generate_random.R")
+```
+
+
+Leemos los datos necesarios para seleccionar la muestra de paneles
+
+```{r}
+setwd("output/1.LecturaPreprocesamientoMarco_InfoTam")
+df_asignacionMuestra <- readRDS("df_asignacionMuestra_reducido.Rds")
+df_marco <- readRDS("df_marco_reducido.Rds")
+```
+
+
+
+# Tamaño de muestra de cada uno de los paneles pivotales (primera fila) que no son de refresco
+
+Aplicamos la función de distribución sobre cada uno de los estratos y lo agregamos al dataframe, esta función permite calcular el número de UPMs que debe contener cada panel, como no necesariamente el número de UPMs por estrato da un número entero al dividirlo por 15 por eso se requiere realizar una asignación entera:
+
+
+```{r}
+df_asignacionMuestra <- df_asignacionMuestra %>% arrange(estrato)
+num_estratos <- nrow(df_asignacionMuestra)
+lst_configuracionPanles <- vector(mode = "list", length = num_estratos)
+for(i in 1:num_estratos){
+  temp_tamp_panelesA <- redistribution_PSU_sample(df_asignacionMuestra$nI_h[i], 15)[-1] 
+  temp_tamp_panelesB <- matrix(temp_tamp_panelesA, nrow = 1)  %>% as.data.frame()
+  names(temp_tamp_panelesB) <- c("num_panelesGrandes", "Num_panelesPequenos", "NumPSU_panelesGrandes", 
+                                 "NumPSU_panelesPequenos")
+  lst_configuracionPanles[[i]] <- temp_tamp_panelesB
+}
+df_configuracionPanles <- bind_rows(lst_configuracionPanles)
+df_configuracionPanles$NumPSU_panelesGrandes <- ifelse(df_configuracionPanles$num_panelesGrandes == 0,
+                                                       0, df_configuracionPanles$NumPSU_panelesGrandes)
+df_asignacionMuestra <- cbind(df_asignacionMuestra, df_configuracionPanles)
+df_asignacionMuestra <- df_asignacionMuestra %>% arrange(estrato)
+```
+
+
+
+
+# Asignación de tamaño de muestra de cada panel
+
+Calculamos aleatoriamente el número de UPMs en los paneles pivotales que no se refrescan y los que se refrescan:
+
+```{r}
+df_pivote_noRefresco <- data.frame(panel_pivote = unique(df_paneles1raFila_HijosNoRefresco$panel_pivote))
+df_pivote_Refresco <- data.frame(panel_pivote = unique(df_panelesRefresco_Hijos$panel_pivote))
+```
+
+
+En cada estrato asignaremos el tamaño de muestra de los paneles pivote de no refresco, para los paneles pivote de refresco se deberá asignar el mismo tamaño del panel saliente.
+
+
+
+
+```{r}
+vctr_estratos <- unique(df_asignacionMuestra$estrato) %>% sort()
+num_estratos <- length(vctr_estratos)
+lst_asignaNumUPMPanelNoRefrescoXEstrato <- vector(mode = "list", length = num_estratos)
+lst_asignaNumUPMPanelRefrescoXEstrato <- vector(mode = "list", length = num_estratos)
+
+set.seed(30092024)
+semillas <- sample(1:1000, num_estratos)
+for(i in 1:num_estratos){
+  temp_tamEstrato <- df_asignacionMuestra %>% filter(estrato == vctr_estratos[i])
+
+  # Seleccionamos aleatoriamente el número de paneles grandes y pequeños
+  set.seed(semillas[i])
+  temp_asignaNumUPMPanelPivotalXEstrato <- df_pivote_noRefresco %>% 
+    mutate(aleatorio = runif(nrow(df_pivote_noRefresco))) %>% arrange(aleatorio)
+  temp_asignaNumUPMPanelPivotalXEstrato$n_UPMsXPanel <- NA_integer_
+  
+  if(df_asignacionMuestra$num_panelesGrandes[i] >= 1){
+  temp_asignaNumUPMPanelPivotalXEstrato$n_UPMsXPanel[1:df_asignacionMuestra$num_panelesGrandes[i]] <- df_asignacionMuestra$NumPSU_panelesGrandes[i]
+  temp_asignaNumUPMPanelPivotalXEstrato$n_UPMsXPanel[(df_asignacionMuestra$num_panelesGrandes[i]+1):15] <- df_asignacionMuestra$NumPSU_panelesPequenos[i]
+  }
+  
+  if(df_asignacionMuestra$num_panelesGrandes[i]  == 0){
+  temp_asignaNumUPMPanelPivotalXEstrato$n_UPMsXPanel[1:15] <- df_asignacionMuestra$NumPSU_panelesPequenos[i]
+  }
+  
+  
+  temp_asignaNumUPMPanelPivotalXEstrato <- temp_asignaNumUPMPanelPivotalXEstrato %>% arrange(panel_pivote)
+  temp_asignaNumUPMPanelPivotalXEstrato$aleatorio <- NULL
+  
+  # Heredar tamaño de los paneles pivotales (primera fila) que no son de refresco a los paneles
+  # hijos que no son de refrescos
+  temp_tamPanelesNoRefrescoNoPivotales <- left_join(df_paneles1raFila_HijosNoRefresco, 
+                                                    temp_asignaNumUPMPanelPivotalXEstrato,
+                                                    by = "panel_pivote") %>% 
+    select(panel_derivado, n_UPMsXPanel) %>% rename(panel = panel_derivado)
+  
+  names(temp_asignaNumUPMPanelPivotalXEstrato)[1] <- "panel"
+  
+  # Este archivo contiene consolidado el tamaño de los paneles que no son de refresco
+  temp_asignaNumUPMPanelNoRefrescoXEstrato <-  bind_rows(temp_asignaNumUPMPanelPivotalXEstrato, 
+                                                         temp_tamPanelesNoRefrescoNoPivotales) %>% 
+    arrange(panel)
+  
+  # Ahora le asigno a los paneles de refresco el tamaño de muestra
+  # Ojo por que lo primero es asignar los tamaños de muestra de los paneles de refresco pivotales
+  
+  df_panelSustituido_PivotalRefresco <- df_panelesSustituidos_Hijos %>% 
+   group_by(panel_sustituye) %>% mutate(ranking = row_number()) %>%
+    filter(ranking == 1) %>% select(-ranking)
+  
+  # Se calcula el número de UPMs de los primeros paneles pivotales de refresco de cada columna
+  df_TampanelSustituido_PivotalRefresco <- df_panelSustituido_PivotalRefresco %>% 
+    left_join(temp_asignaNumUPMPanelNoRefrescoXEstrato, by = c("panel_sustituye" = "panel")) %>% ungroup()
+  
+  df_TampanelSustituido_PivotalRefresco <- df_TampanelSustituido_PivotalRefresco %>% 
+    dplyr::select(-panel_sustituye )
+  
+  # Se le hereda el número de UPMs  a los paneles hijos de los primeros paneles pivotales que son de refresco
+    temp_asignaNumUPMPanelRefrescoXEstrato_A <- right_join(df_TampanelSustituido_PivotalRefresco, 
+                                                           df_1erospanelesRefresco_Hijos,
+                    by = c("panel_refresco" = "panel_pivote")) %>% select(panel_derivado, n_UPMsXPanel)
+    
+    names(temp_asignaNumUPMPanelRefrescoXEstrato_A)[1] <- "panel_refresco"
+    
+    # Se conforma una tabla con el número de UPMs en todos los paneles de refresco, se garantiza que herede el tamaño del panel 
+    # saliente en cada columna
+    temp_asignaNumUPMPanelRefrescoXEstrato_B <- bind_rows(df_TampanelSustituido_PivotalRefresco, 
+                                                          temp_asignaNumUPMPanelRefrescoXEstrato_A)
+  
+    temp_asignaNumUPMPanelRefrescoXEstrato <- temp_asignaNumUPMPanelRefrescoXEstrato_B %>% 
+      arrange(panel_refresco)
+    # 
+    # temp_asignaNumUPMPanelRefrescoXEstrato <- df_panelesSustituidos_Hijos %>%
+    # rename(panel = panel_sustituye) %>% 
+    # left_join(temp_asignaNumUPMPanelNoRefrescoXEstrato, by = "panel") %>% 
+    # select(-panel)
+    # 
+  temp_asignaNumUPMPanelNoRefrescoXEstrato$estrato  <- vctr_estratos[i]   
+  temp_asignaNumUPMPanelRefrescoXEstrato$estrato  <- vctr_estratos[i]
+
+  lst_asignaNumUPMPanelNoRefrescoXEstrato[[i]] <- temp_asignaNumUPMPanelNoRefrescoXEstrato
+  lst_asignaNumUPMPanelRefrescoXEstrato[[i]] <- temp_asignaNumUPMPanelRefrescoXEstrato
+
+  rm(temp_asignaNumUPMPanelNoRefrescoXEstrato)
+  rm(temp_asignaNumUPMPanelRefrescoXEstrato)
+
+  }
+
+df_asignaNumUPMPanelNoRefrescoXEstrato <- bind_rows(lst_asignaNumUPMPanelNoRefrescoXEstrato)
+df_asignaNumUPMPanelRefrescoXEstrato <- bind_rows(lst_asignaNumUPMPanelRefrescoXEstrato)
+
+
+
+df_asignaNumUPMPanelNoRefrescoXEstrato <- df_asignaNumUPMPanelNoRefrescoXEstrato[c("estrato", "panel", "n_UPMsXPanel")]
+df_asignaNumUPMPanelRefrescoXEstrato <- df_asignaNumUPMPanelRefrescoXEstrato[c("estrato", "panel_refresco", "n_UPMsXPanel")]
+```
+
+
+
+
+# Calculo de número de UPMs de refuerzo
+
+Necesito identificar cuantas UPMs de refresco para proceder a seleccionarlas:
+
+
+```{r}
+df_asignaNumUPMPanelRefrescoXEstrato <- df_asignaNumUPMPanelRefrescoXEstrato %>% left_join(df_pivote_Refresco %>% 
+                                                   rename(panel_refresco = panel_pivote) %>% 
+                                                     mutate(indica_pivote = 1), by = "panel_refresco") %>% 
+  mutate(indica_pivote = ifelse(is.na(indica_pivote), 0, indica_pivote))
+```
+
+
+
+Calculamos el total de UPMs de Refuerzo por estrato:
+
+```{r}
+df_nUPMRefresco <- df_asignaNumUPMPanelRefrescoXEstrato %>% 
+  filter(indica_pivote == 1) %>% group_by(estrato) %>% 
+  summarise(n_upmRefresco = sum(n_UPMsXPanel)) %>% arrange(estrato)
+```
+
+Se coloca también el tamaño de muestra de UPMS por estrato debido a las UPMs de refrescos:
+
+```{r}
+df_asignacionMuestra <- df_asignacionMuestra %>% left_join(df_nUPMRefresco, by = "estrato")
+```
+
+
+
+
+# Seleccionar muestra maestra de UPMs (maestra) y de refuerzos
+
+```{r}
+df_tamMuestraMaestraRefrescosUPM <- df_asignacionMuestra %>% select(estrato, nI_h,  n_upmRefresco)
+```
+
+
+Seleccionamos en cada estrato las UPM's:
+
+```{r}
+lst_marcoSeleccion <- vector(mode = "list", length = length(vctr_estratos))
+for(i in 1:length(vctr_estratos)){
+  temp_nI_h <- df_tamMuestraMaestraRefrescosUPM$nI_h[i]
+  temp_n_upmRefresco <- df_tamMuestraMaestraRefrescosUPM$n_upmRefresco[i]
+  
+  temp_marco <- df_marco %>% filter(estrato == vctr_estratos[i])
+  #set.seed(semillas[i])
+  #temp_marco$aleatorio <- runif(n = nrow(temp_marco))
+  
+     xi_pareto <- generate_random(N = nrow(temp_marco),
+                   seed = semillas[i],
+                   xk = temp_marco$viviendas_preliminares,
+                   Pareto = TRUE,
+                   n = temp_nI_h)$Xi_Pareto
+  
+  temp_marco$aleatorio_pareto <- xi_pareto
+  temp_marco <- temp_marco %>% arrange(aleatorio_pareto)
+  temp_marco$indica_seleccion <- 0
+  temp_marco$indica_seleccion[1:(temp_nI_h + temp_n_upmRefresco)] <- 1
+  
+  # Luego para que las de refresco no se vean afectadas por la medida de tamaño y queden en la cola,
+  # se seleccionan aleatoriamente entre los ceros 
+  
+  set.seed( semillas[i])
+  temp_marco$alea_selRefresco <- runif(nrow(temp_marco))
+  temp_marco <- temp_marco %>% arrange(alea_selRefresco)
+  
+  temp_marco[temp_marco$indica_seleccion ==1 ,]$indica_seleccion[1:temp_n_upmRefresco] <- 2 
+
+  lst_marcoSeleccion[[i]] <- temp_marco
+  
+}
+rm(temp_marco)
+rm(temp_nI_h)
+rm(temp_n_upmRefresco)
+
+df_marcoSeleccion <- bind_rows(lst_marcoSeleccion)
+```
+
+
+```{r}
+table(df_marcoSeleccion$indica_seleccion)
+```
+
+
+
+
+
+
+
+# 2. Asignación de UPMs a Paneles de refuerzo y de no refuerzo
+
+
+# a. Selección de UPMs para paneles de refresco y las que no son de refresco
+
+
+Se filtran las UPMs que se usarán para los paneles que no son de refresco y las que si la son, recueda que  1 significa que son los 1505 UPMS origintales, 2 que son las 1169 que entrarán en los paneles de refuerzo y 0 que no son UPMS seleccionadas.
+
+Se seleccionan las UPMs que serán usadas para los paneles que no son de refuerzo:
+
+
+```{r}
+df_upm_seleccionadas_maestra <- df_marcoSeleccion %>% filter(indica_seleccion == 1)
+df_upm_seleccionadas_refresco <- df_marcoSeleccion %>% filter(indica_seleccion == 2)
+```
+
+
+Se seleccionan las UPMs que serán usadas para los paneles de refuerzo
+
+```{r}
+#df_upm_seleccionadas_panelesRefresco <- df_marcoSeleccion %>% filter(indica_seleccion == 2)
+```
+
+
+
+
+# b. Asignación aleatoria de paneles a UPMs que no son de refresco
+
+
+Paso 1: Asignamos los paneles iniciales (pivotales) a las UPMs seleccionadas: 
+
+Las  UPMS que se seleccionan en la muestra maestra en cada estrato se asignan a A1, A2 ... O1, asigno aleatoriamente los paneles pivotales
+
+```{r}
+# Paso necesario puesto que necesito aleatoriedad para asignar a los paneles de cada estrato
+set.seed(30092024)
+df_upm_seleccionadas_maestra$alea_AsignaUPM_PanelNoRefresco <- 
+  runif(n = nrow(df_upm_seleccionadas_maestra)) 
+
+df_upm_seleccionadas_maestra <- df_upm_seleccionadas_maestra %>%  arrange(estrato, alea_AsignaUPM_PanelNoRefresco)
+```
+
+Se asginan las  UPMs a cada uno de los paneles que no son de refuerzo que están en la primera fila (pivotales):
+
+```{r}
+# Ya está ordenando aleatorio
+lst_upm_seleccionadas_panelesPivotalesNoRefresco <- vector(mode = "list", length = length(vctr_estratos))
+for(i in 1:length(vctr_estratos)){
+  
+  temp_upm_seleccionadas_panelesPivotales <- df_upm_seleccionadas_maestra %>% 
+    filter(estrato == vctr_estratos[i])
+
+    if(df_asignacionMuestra$num_panelesGrandes[i] == 0){
+      temp_upm_seleccionadas_panelesPivotales$panel <-  rep(Paneles[1,] %>% as.character(), 
+            rep(df_asignacionMuestra$NumPSU_panelesPequenos[i], 15))
+    }
+    
+   if(df_asignacionMuestra$num_panelesGrandes[i] >= 1){
+   
+   # En esta tabla se asignan aleatoriamente las UPMs a los paneles pivotales que no son de refresco (primera fila)   
+     
+     temp_tamupmpivotalesNorefresco <- df_asignaNumUPMPanelNoRefrescoXEstrato %>%
+       filter(estrato == vctr_estratos[i] & panel %in% (Paneles[1,] %>% as.character())) %>% pull(n_UPMsXPanel)
+     
+      # c(rep(df_asignacionMuestra[i,]$NumPSU_panelesGrandes , df_asignacionMuestra[i,]$num_panelesGrandes), 
+      #         rep(df_asignacionMuestra[i,]$NumPSU_panelesPequenos  , df_asignacionMuestra[i,]$Num_panelesPequenos))
+     
+   temp_upm_seleccionadas_panelesPivotales$panel <-  rep(Paneles[1,] %>% as.character(), 
+                                                         temp_tamupmpivotalesNorefresco
+            )
+  }
+
+    
+  lst_upm_seleccionadas_panelesPivotalesNoRefresco[[i]] <- temp_upm_seleccionadas_panelesPivotales
+  }
+
+# Contiene en cada estrato la asignación de UPMs a los paneles de la primera fila (pivotales de no refresco)
+df_upm_seleccionadas_panelesPivotalesNoRefresco <- bind_rows(lst_upm_seleccionadas_panelesPivotalesNoRefresco)
+
+```
+
+
+
+Paso 2: Asignamos las UPMs a los paneles que nos son iniciales (pivotales) ni de refrescos:
+
+```{r}
+lst_asignaPanelNoPivotalUPMNoRefresco <- vector(mode = "list", length = nrow(df_paneles1raFila_HijosNoRefresco))
+
+for(i in 1:nrow(df_paneles1raFila_HijosNoRefresco)){
+  temp_upms_NoPivotalUPMNoRefresco <- df_upm_seleccionadas_panelesPivotalesNoRefresco %>% 
+    filter(panel == df_paneles1raFila_HijosNoRefresco[i,] %>% pull(panel_pivote))
+  
+  temp_upms_NoPivotalUPMNoRefresco <- temp_upms_NoPivotalUPMNoRefresco %>% left_join(df_paneles1raFila_HijosNoRefresco[i,], 
+                                       by = c("panel" = "panel_pivote"))
+  temp_upms_NoPivotalUPMNoRefresco$panel <- NULL
+  # Esta tabla contiene el número de UPMs asignados para todos los paneles hijos de los paneles de la primera fila (se hereda este 
+  # tamaño)
+  temp_upms_NoPivotalUPMNoRefresco <- temp_upms_NoPivotalUPMNoRefresco %>% rename(panel = panel_derivado)
+  lst_asignaPanelNoPivotalUPMNoRefresco[[i]] <- temp_upms_NoPivotalUPMNoRefresco
+}
+rm(temp_upms_NoPivotalUPMNoRefresco)
+
+df_asignaPanelNoPivotalUPMNoRefresco <- bind_rows(lst_asignaPanelNoPivotalUPMNoRefresco)
+df_asignaPanelNoPivotalUPMNoRefresco <- df_asignaPanelNoPivotalUPMNoRefresco %>% arrange(estrato, upm, panel)
+```
+
+
+Unificamos en un dataframe las upm que no son de refurzo pivotales y demás:
+
+```{r}
+df_upm_seleccionadas_panelesPivotalesNoRefresco$indica_pivote <- 1
+df_asignaPanelNoPivotalUPMNoRefresco$indica_pivote <- 0
+df_upm_EnpanelesNoRefresco <- bind_rows(df_upm_seleccionadas_panelesPivotalesNoRefresco, 
+                                      df_asignaPanelNoPivotalUPMNoRefresco)
+df_upm_EnpanelesNoRefresco$indica_seleccion <- ifelse(df_upm_EnpanelesNoRefresco$indica_seleccion == 1,
+                                                      "paneles_noRefresco", NA_character_)
+head(df_upm_EnpanelesNoRefresco)
+```
+
+
+
+
+
+# c. Asignación aleatoria de paneles a UPMs que son de refresco
+
+
+Paso 1: Asignamos los paneles iniciales de refresco a las UPMs seleccionadas: 
+
+
+```{r}
+# Paso necesario puesto que necesito aleatoriedad para asignar a los paneles de cada estrato
+set.seed(30092024)
+df_upm_seleccionadas_refresco$alea_AsignaUPM_PanelRefresco <- 
+  runif(n = nrow(df_upm_seleccionadas_refresco)) 
+df_upm_seleccionadas_refresco <- df_upm_seleccionadas_refresco %>%  arrange(estrato, alea_AsignaUPM_PanelRefresco)
+df_upm_seleccionadas_refresco$alea_AsignaUPM_PanelRefresco <- NULL
+```
+
+
+
+
+
+
+
+Se asignan las  UPMs a cada uno de los paneles que son de refuerzo  (pivotales):
+
+```{r}
+# Ya está ordenando aleatorio
+lst_upm_seleccionadas_panelesRefrescoPivotales <- vector(mode = "list", length = length(vctr_estratos))
+
+# "A09" "B06" "C03" "C11" "D08" "E05" "E13": paneles pivotales
+paneles_refresco_pivote <- df_panelesRefresco_Hijos$panel_pivote %>%
+                                                           unique() %>% sort() 
+
+
+# Acá traigo una tabla que me permite especificar que panel se sustituye por cual de refresco     
+#   panel_refresco panel_sustituye
+# 1            A09             A08
+# 2            B06             B05
+# 3            C03             C02
+# 4            C11             C02
+# 5            D08             D07
+# 6            E05             E04
+# 7            E13             E04     
+
+#¿se peude quitar?
+# df_herenciaTamanoSustitucion <- left_join(data.frame(panel_refresco  = paneles_refresco_pivote),
+#      df_panelesSustituidos_Hijos, by = "panel_refresco")
+     
+     
+     
+     # df_herenciaTamanoSustitucion$panel_sustituye <- ifelse(is.na(df_herenciaTamanoSustitucion$panel_sustituye),
+     # "C02", df_herenciaTamanoSustitucion$panel_sustituye)
+     
+
+for(i in 1:length(vctr_estratos)){
+  
+  # Estas son todas las UPMs de cada estrato que salieron en la muestra de refrescos
+    temp_upm_seleccionadas_panelesRefrescoPivotales <- df_upm_seleccionadas_refresco %>% 
+    filter(estrato == vctr_estratos[i])
+  
+    
+    # Traerse el mismo tamaño de UPMs en el panel A9 que en el A8
+    n_rep_A_09 <- nrow(df_upm_EnpanelesNoRefresco %>% filter(estrato == vctr_estratos[i] & 
+                                             panel == "A08"))
+     
+     n_rep_B06 <- nrow(df_upm_EnpanelesNoRefresco %>% filter(estrato == vctr_estratos[i] & 
+                                             panel == "B05"))
+     
+     n_rep_C03 <- nrow(df_upm_EnpanelesNoRefresco %>% filter(estrato == vctr_estratos[i] & 
+                                             panel == "C02"))
+     
+     n_rep_C11 <- nrow(df_upm_EnpanelesNoRefresco %>% filter(estrato == vctr_estratos[i] & 
+                                             panel == "C02"))
+     
+     n_repA_D08 <- nrow(df_upm_EnpanelesNoRefresco %>% filter(estrato == vctr_estratos[i] & 
+                                             panel == "D07"))
+     
+    n_repA_E05 <- nrow(df_upm_EnpanelesNoRefresco %>% filter(estrato == vctr_estratos[i] & 
+                                             panel == "E04"))
+     
+     n_repA_E13 <- nrow(df_upm_EnpanelesNoRefresco %>% filter(estrato == vctr_estratos[i] & 
+                                             panel == "E04"))
+     
+    #temp_upm_seleccionadas_panelesRefrescoPivotales$panel <-  NA_character_
+    
+    # Repetir cada uno de los paneles pivotales de refrescos el número de UPMs que se seleccionaron en los paneles que salieron  
+    vctr_asignaPaneles <-  rep(paneles_refresco_pivote, 
+            c(n_rep_A_09, n_rep_B06, n_rep_C03, n_rep_C11, n_repA_D08, n_repA_E05, n_repA_E13))
+    
+    # Acá no se hace Pareto por que ya las UPMs de refresco se seleccionaron aleatoriamente usando un esquema 
+    # de Pareto y lo que hay que hacer simplemente es repartir aleatoriamente en los paneles con los tamaños
+    
+    # Asignar aleatoriamente los paneles
+    
+    
+    
+temp_upm_seleccionadas_panelesRefrescoPivotales$panel <- vctr_asignaPaneles
+
+temp_upm_seleccionadas_panelesRefrescoPivotales <- temp_upm_seleccionadas_panelesRefrescoPivotales %>% 
+  arrange(estrato, upm)
+
+  lst_upm_seleccionadas_panelesRefrescoPivotales[[i]] <- temp_upm_seleccionadas_panelesRefrescoPivotales
+  }
+
+df_upm_seleccionadas_panelesRefrescoPivotales <- bind_rows(lst_upm_seleccionadas_panelesRefrescoPivotales)
+
+```
+
+
+
+
+Paso 2: Asignamos las UPMs a los paneles que nos son iniciales ni de refrescos:
+
+
+```{r}
+
+df_panelesRefresco_Hijos <- df_panelesRefresco_Hijos %>% filter(!is.na(panel_derivado))
+lst_asignaPanelRefrescoUPM <- vector(mode = "list", length = nrow(df_panelesRefresco_Hijos))
+# Para cada panel de refresco hijo se asignan UPMS
+
+for(i in 1:nrow(df_panelesRefresco_Hijos)){
+  temp_upms <- df_upm_seleccionadas_panelesRefrescoPivotales %>% 
+    filter(panel == df_panelesRefresco_Hijos[i,] %>% pull(panel_pivote))
+  temp_upms <- temp_upms %>% left_join(df_panelesRefresco_Hijos[i,], 
+                                       by = c("panel" = "panel_pivote"))
+  temp_upms$panel <- NULL
+  temp_upms <- temp_upms %>% rename(panel = panel_derivado)
+  lst_asignaPanelRefrescoUPM[[i]] <- temp_upms
+}
+rm(temp_upms)
+
+df_asignaPanelRefrescoUPM <- bind_rows(lst_asignaPanelRefrescoUPM)
+df_asignaPanelRefrescoUPM <- df_asignaPanelRefrescoUPM %>% arrange(estrato, upm, panel)
+```
+
+
+Unificamos en un dataframe las upm que son de refurzo pivotales y demás:
+
+```{r}
+df_upm_seleccionadas_panelesRefrescoPivotales$indica_pivote <- 1
+df_asignaPanelRefrescoUPM$indica_pivote <- 0
+df_upm_EnpanelesRefresco <- bind_rows(df_upm_seleccionadas_panelesRefrescoPivotales, 
+                                      df_asignaPanelRefrescoUPM)
+df_upm_EnpanelesRefresco$indica_seleccion <- ifelse(df_upm_EnpanelesRefresco$indica_seleccion == 2,
+                                                      "paneles_Refresco", NA_character_)
+
+
+```
+
+
+
+
+# d. Consolidación asignación de paneles a UPMs 
+
+Consolidadomos las UPMs asignados a los paneles tanto de refuerzon como las originales (no de refuerzo):
+
+
+```{r}
+unique(df_upm_EnpanelesNoRefresco$upm) %>% length()
+unique(df_upm_EnpanelesRefresco$upm) %>% length()
+```
+
+
+```{r}
+df_upm_EnpanelesNoRefresco$indica_muestra_maestra <- 1
+df_upm_EnpanelesRefresco$indica_muestra_maestra <- 0
+
+df_upmEnpaneles_consolidado <- bind_rows(df_upm_EnpanelesNoRefresco, df_upm_EnpanelesRefresco)
+```
+
+
+```{r}
+unique(df_upmEnpaneles_consolidado$upm) %>% length()
+unique(df_upmEnpaneles_consolidado$upm) %>% length()
+
+
+```
+
+
+
+```{r}
+resumen_panelesUPM <- df_upmEnpaneles_consolidado %>% group_by(upm) %>% count()
+```
+
+Resumimos la asignación de UPMs a Paneles
+
+```{r}
+resumen_panelesUPM <- df_upmEnpaneles_consolidado %>% group_by(upm) %>% count()
+```
+
+
+
+
+# Archivos para compartir
+
+```{r}
+dir.create("output")
+dir.create("output/2.Resultados")
+```
+
+
+Entrega principal:
+
+```{r}
+df_entregaMuestraCostaRica <- df_upmEnpaneles_consolidado %>%
+  select(estrato, panel, upm,  viviendas_preliminares)
+# Pegarle información para consolidar
+
+df_marco <- readRDS("output/1.LecturaPreprocesamientoMarco_InfoTam/df_marco.Rds")
+df_entregaMuestraCostaRica <- left_join(df_entregaMuestraCostaRica, df_marco, by = "upm")
+
+# Marcar si es UPM de la muestra maestra o de reemplazo
+df_entregaMuestraCostaRica$indicadora_panel_pivotal <- ifelse(df_entregaMuestraCostaRica$panel %in%
+                                                      vctr_paneles_refresco, "pivotal_panel_refresco",
+      ifelse(df_entregaMuestraCostaRica$panel %in% as.character(Paneles[1,]), "pivotal_panel_inicial", NA_character_)
+                                                      )
+
+df_entregaMuestraCostaRica$indicadora_tipoPanel <- ifelse(df_entregaMuestraCostaRica$panel %in%
+        sort(c(vctr_paneles_refresco, unique(df_panelesRefresco_Hijos$panel_derivado))), "panel_refresco",
+        "panel_inicial")
+
+write_xlsx(df_entregaMuestraCostaRica, "output/2.Resultados/EntregaMuestraCostaRica6oTrimestres.xlsx")
+```
+
+
+Conteo de paneles de Refresco:
+
+```{r}
+descripcion_paneles <- df_entregaMuestraCostaRica %>% group_by(indicadora_panel_pivotal) %>% 
+  count() %>% ungroup() %>% 
+  slice(-3)
+descripcion_paneles <- rbind(descripcion_paneles, data.frame(indicadora_panel_pivotal = "Total", n = sum(descripcion_paneles$n)))
+
+
+write_xlsx(descripcion_paneles, "output/2.Resultados/1.descripcion_paneles.xlsx")
+```
+
+
+
+Cuantas UPMs tiene cada Panel dentro de cada estrato
+
+
+```{r}
+lst_tamPanelesEstrato <- vector(mode = "list", length = length(vctr_estratos))
+for(i in 1:length(vctr_estratos)){
+  temp_estratos <- df_upmEnpaneles_consolidado %>% filter(estrato == vctr_estratos[i])
+  temp_estratos <- temp_estratos %>% group_by(panel) %>% summarise(cuenta = n())
+temp_estratos$estrato <- vctr_estratos[i]
+temp_estratos <- temp_estratos %>% relocate(estrato)
+  lst_tamPanelesEstrato[[i]] <- temp_estratos
+}
+names(lst_tamPanelesEstrato) <- vctr_estratos
+write_xlsx(lst_tamPanelesEstrato, "output/2.Resultados/2.Num_UPMSEnPanel_estrato.xlsx")
+
+consulta_numUPMSXPanel <- df_upmEnpaneles_consolidado %>% group_by(estrato, panel) %>% 
+  summarise(n_UPMsXpanel = n())
+
+write_xlsx(consulta_numUPMSXPanel, "output/2.Resultados/2.Num_UPMSEnPanel.xlsx")
+
+```
+
+
+
+
+```{r}
+vctr_numerico <- rep(NA_integer_, nrow(Paneles))
+for(i in 1:nrow(Paneles)){
+vctr_numerico[i] <- df_upmEnpaneles_consolidado %>% filter(panel %in% as.character(Paneles[i,])) %>% nrow()
+}
+df_comprobacionTamanoTrimestre <- data.frame(Trimestre = 1:60, n_h = vctr_numerico)
+write_xlsx(df_comprobacionTamanoTrimestre, "output/2.Resultados/3a.TamMuestra_Trimestre.xlsx")
+```
+
+
+
+Muestra UPMS enc ada estrato por trimestre:
+
+```{r}
+lst_muestraXTrimestre <- vector(mode = "list", length = nrow(Paneles))
+for(i in 1:nrow(Paneles)){
+  temp_upmsXTrimestre <- df_upmEnpaneles_consolidado %>% filter(panel %in% as.character(Paneles[i,]))
+    lst_muestraXTrimestre[[i]] <- temp_upmsXTrimestre %>% select(estrato, upm, panel) %>% 
+      arrange(estrato, panel, upm)
+} 
+names(lst_muestraXTrimestre) <- paste0("T", 1:60)
+write_xlsx(lst_muestraXTrimestre, "output/2.Resultados/3c.TamMuestraUPMS_TrimestrePanelXEstrato.xlsx")
+```
+
+
+
+
+
+```{r}
+matriz_estratoTrimestre <- matrix(0L, length(vctr_estratos), nrow(Paneles))
+for(i in 1:length(vctr_estratos)){
+  for(j in 1:nrow(Paneles)){
+  
+  matriz_estratoTrimestre[i,j] <-   df_upmEnpaneles_consolidado %>% 
+    filter(estrato == vctr_estratos[i] & panel %in% as.character(Paneles[j,])) %>% nrow()
+  }
+}
+matriz_estratoTrimestre <- t(matriz_estratoTrimestre) %>% as.data.frame()
+colnames(matriz_estratoTrimestre) <- vctr_estratos
+row.names(matriz_estratoTrimestre) <- paste0("T", 1:60)
+
+write_xlsx(matriz_estratoTrimestre, "output/2.Resultados/3b.MuestraUPMS_TrimestrePanelXEstrato.xlsx")
+```
+
+
+```{r}
+
+```
+
+
+
+

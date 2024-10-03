@@ -1,0 +1,128 @@
+---
+title: "Lectura de marco de Costa Rica"
+author: "José Fernando Zea"
+date: "2024-10-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(readxl)
+library(writexl)
+```
+
+
+Leemos el marco de Costa Rica
+
+```{r}
+setwd("data")
+df_correlativa <- read_excel("correlativa_estratos.xlsx")
+df_marco <- read_excel("2024-09-30 MMV-2022.xlsx")
+df_marco <- janitor::clean_names(df_marco)
+```
+
+```{r}
+setwd("data")
+df_asignacionMuestra <- read_excel("Asignacion_estrato_sep_26_2024.xlsx")
+df_asignacionMuestra <- janitor::clean_names(df_asignacionMuestra)
+```
+
+
+```{r}
+df_marco <- df_marco %>% mutate(estrato_marco = paste(estrato_ech,  nombre_estrato_ech))  %>% 
+            mutate(estrato_marco = gsub(" {2,}", " ", estrato_marco))
+df_marco <- df_marco %>% left_join(df_correlativa, by = "estrato_marco")
+df_marco$estrato_marco <- NULL
+df_marco <- df_marco %>% rename(estrato = estrato_tammue) 
+```
+
+Se asumirá el número de viviendas preliminares está altamente correlacionado con el tamaño de la manzana. Con el número de viviendas se seleccionarán las UPMs que conforman la muestra maestra y las UPMs de refresco. Seleccionamos las variables relevantes para la rotación:
+
+```{r}
+df_marco <- df_marco %>% select(estrato, upm, viviendas_preliminares)
+```
+
+
+```{r}
+sum(df_asignacionMuestra$pobreza_tamano_de_la_muestra_upm)
+sum(df_asignacionMuestra$fuerza_de_trabajo_tamano_de_la_muestra_upm)
+table(df_asignacionMuestra$pobreza_tamano_de_la_muestra_upm == df_asignacionMuestra$fuerza_de_trabajo_tamano_de_la_muestra_upm)
+```
+
+
+
+```{r}
+df_asignacionMuestra <- df_asignacionMuestra %>% 
+                        select(estrato,
+                               nI_h = pobreza_tamano_de_la_muestra_upm)
+
+df_asignacionMuestra$num_paneles_trimestrales <- 15
+df_asignacionMuestra$upmsXPanel <- df_asignacionMuestra$nI_h /  
+                                   df_asignacionMuestra$num_paneles_trimestrales
+```
+
+
+
+Lectura de paneles pivotales y derivados:
+
+```{r}
+# setwd("data")
+# df_panelesNoRefresco <- read_excel("paneles_pivotales.xlsx", sheet = "originales")
+# 
+# df_panelesNoRefresco <- read_excel("paneles_pivotales.xlsx", sheet = "originales")
+# df_panelesRefresco <- read_excel("paneles_pivotales.xlsx", sheet = "refrescos")
+# df_herenciaRefresco <- read_excel("paneles_pivotales.xlsx", sheet = "herenciatam_refrescospivotehijo")
+
+
+
+```
+
+
+
+Salvar los archivos:
+
+```{r}
+dir.create("output")
+dir.create("output/1.LecturaPreprocesamientoMarco_InfoTam")
+
+```
+
+
+```{r}
+setwd("output/1.LecturaPreprocesamientoMarco_InfoTam")
+saveRDS(df_asignacionMuestra, "df_asignacionMuestra_reducido.Rds")
+saveRDS(df_marco, "df_marco_reducido.Rds")
+
+#saveRDS(df_panelesNoRefresco, "df_panelesNoRefresco.Rds")
+#saveRDS(df_panelesRefresco, "df_panelesRefresco.Rds")
+#saveRDS(df_herenciaRefresco, "df_herenciaRefresco.Rds")
+
+```
+
+
+
+
+```{r}
+df_marco  <- read_excel("data/2024-09-30 MMV-2022.xlsx")
+
+df_marco <- janitor::clean_names(df_marco)
+
+df_marco <- df_marco %>% select(c("upm", "region", "nombre_region", "zona_2022", "nombre_zona_2022", 
+"estrato_nise", "nombre_estrato_nise", "estrato_ech", "nombre_estrato_ech", 
+"provincia", "canton", "distrito",  
+"personas_predichas_cepal", "viviendas_predichas_cepal"))
+
+write_xlsx(df_marco, "output/1.LecturaPreprocesamientoMarco_InfoTam/df_marco.xlsx")
+saveRDS(df_marco, "output/1.LecturaPreprocesamientoMarco_InfoTam/df_marco.Rds")
+```
+
+```{r}
+
+```
+
+
