@@ -887,10 +887,18 @@ MatrizMensual <- reshape2::dcast(data = ResumenConsultaXmes, estrato + panel ~ y
 ```
 
 
+```{r}
+pruebaMes <- MatrizMensual %>%
+  group_by(estrato) %>%
+  summarise(across(starts_with("A"), ~ sum(.x, na.rm = TRUE), .names = "sum_{.col}"))
+```
+
 
 ```{r}
 setwd("output/2.Resultados")
 write_xlsx(MatrizMensual, "MatrizMensual.xlsx")
 write_xlsx(ResumenConsultaXmes, "ResumenConsultaXmes.xlsx")
+write_xlsx(pruebaMes, "BalenceoEstratoXmes.xlsx")
+
 ```
 
