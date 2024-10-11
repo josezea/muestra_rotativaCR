@@ -634,7 +634,7 @@ df_entregaMuestraCostaRica$indicadora_tipoPanel <- ifelse(df_entregaMuestraCosta
         sort(c(vctr_paneles_refresco, unique(df_panelesRefresco_Hijos$panel_derivado))), "panel_refresco",
         "panel_inicial")
 
-write_xlsx(df_entregaMuestraCostaRica, "output/2.Resultados/EntregaMuestraCostaRica6oTrimestres.xlsx")
+write_xlsx(df_entregaMuestraCostaRica, "output/2.Resultados/EntregaMuestraCostaRica6oTrimestress.xlsx")
 ```
 
 
@@ -728,4 +728,169 @@ write_xlsx(matriz_estratoTrimestre, "output/2.Resultados/3b.MuestraUPMS_Trimestr
 
 
 
+# Descriptivos solicitados Costa Rica
+
+Creación del mes
+
+
+```{r}
+#mes1 <- c("A01",	"B01",	"C01",	"D01",	"E01")
+#mes2 <- c("F01", "G01", "H01", "I01", "J01")
+#mes2 <- c("K01",	"L01",	"M01",	"N01",	"O01")
+```
+
+
+
+```{r}
+anno <- stringr::str_pad(as.character(rep(1:15, each = 4)), 
+                         width = 2, side = "left", pad = "0")
+
+Paneles_df <- as.data.frame(Paneles)
+Paneles_df$anno <- anno
+Paneles_df$anno <- anno
+
+trimestre <- rep(1:4, 15)
+Paneles_df$trimestre <- trimestre
+```
+
+
+Arreglo primer mes de cada trimestre
+
+
+```{r}
+Paneles_mes1CadaTrimestre <- Paneles_df[,c(1:5, 16, 17)]
+Paneles_mes1CadaTrimestre$mes <- ifelse(Paneles_mes1CadaTrimestre$trimestre == 1, "01",
+                                      ifelse(Paneles_mes1CadaTrimestre$trimestre == 2, "04",
+                                  ifelse(Paneles_mes1CadaTrimestre$trimestre == 3, "07",
+                                  ifelse(Paneles_mes1CadaTrimestre$trimestre == 4, "10", NA_character_))))
+
+Paneles_mes1CadaTrimestre$anno_mes <- paste0("A", Paneles_mes1CadaTrimestre$anno, "M", Paneles_mes1CadaTrimestre$mes)
+
+
+
+Paneles_mes2CadaTrimestre <- Paneles_df[,c(6:10, 16, 17)]
+Paneles_mes2CadaTrimestre$mes <- ifelse(Paneles_mes2CadaTrimestre$trimestre == 1, "02",
+                                      ifelse(Paneles_mes2CadaTrimestre$trimestre == 2, "05",
+                                  ifelse(Paneles_mes2CadaTrimestre$trimestre == 3, "08",
+                                  ifelse(Paneles_mes2CadaTrimestre$trimestre == 4, "11", NA_character_))))
+
+Paneles_mes2CadaTrimestre$anno_mes <- paste0("A", Paneles_mes2CadaTrimestre$anno, "M", Paneles_mes2CadaTrimestre$mes)
+
+
+Paneles_mes3CadaTrimestre <- Paneles_df[,c(11:15, 16, 17)]
+Paneles_mes3CadaTrimestre$mes <- ifelse(Paneles_mes3CadaTrimestre$trimestre == 1, "03",
+                                      ifelse(Paneles_mes3CadaTrimestre$trimestre == 2, "06",
+                                  ifelse(Paneles_mes3CadaTrimestre$trimestre == 3, "09",
+                                  ifelse(Paneles_mes3CadaTrimestre$trimestre == 4, "12", NA_character_))))
+
+
+Paneles_mes3CadaTrimestre$anno_mes <- paste0("A", Paneles_mes3CadaTrimestre$anno, "M", Paneles_mes3CadaTrimestre$mes)
+```
+
+
+Unificaciónd data.frame:
+
+```{r}
+temp1 <- Paneles_mes1CadaTrimestre[,c(1,9)]
+names(temp1) <- "month1"
+
+temp2 <- Paneles_mes1CadaTrimestre[,c(2,9)]
+names(temp2) <- "month1"
+
+temp3 <- Paneles_mes1CadaTrimestre[,c(3,9)]
+names(temp3) <- "month1"
+
+temp4 <- Paneles_mes1CadaTrimestre[,c(4,9)]
+names(temp4) <- "month1"
+
+temp5 <- Paneles_mes1CadaTrimestre[,c(5,9)]
+names(temp5) <- "month1"
+Paneles1 <- rbind(temp1, temp2, temp3, temp4, temp5)
+```
+
+
+```{r}
+temp1 <- Paneles_mes2CadaTrimestre[,c(1,9)]
+names(temp1) <- "month2"
+
+temp2 <- Paneles_mes2CadaTrimestre[,c(2,9)]
+names(temp2) <- "month2"
+
+temp3 <- Paneles_mes2CadaTrimestre[,c(3,9)]
+names(temp3) <- "month2"
+
+temp4 <- Paneles_mes2CadaTrimestre[,c(4,9)]
+names(temp4) <- "month2"
+
+temp5 <- Paneles_mes2CadaTrimestre[,c(5,9)]
+names(temp5) <- "month2"
+
+
+Paneles2 <- rbind(temp1, temp2, temp3, temp4, temp5)
+```
+
+
+```{r}
+temp1 <- Paneles_mes3CadaTrimestre[,c(1,9)]
+names(temp1) <- "month3"
+
+temp2 <- Paneles_mes3CadaTrimestre[,c(2,9)]
+names(temp2) <- "month3"
+
+temp3 <- Paneles_mes3CadaTrimestre[,c(3,9)]
+names(temp3) <- "month3"
+
+temp4 <- Paneles_mes3CadaTrimestre[,c(4,9)]
+names(temp4) <- "month3"
+
+temp5 <- Paneles_mes3CadaTrimestre[,c(5,9)]
+names(temp5) <- "month3"
+
+
+Paneles3 <- rbind(temp1, temp2, temp3, temp4, temp5)
+```
+
+
+
+```{r}
+names(Paneles1)[1] <- "panel"
+names(Paneles2)[1] <- "panel"
+names(Paneles3)[1] <- "panel"
+
+names(Paneles1)[2] <- "year_month"
+names(Paneles2)[2] <- "year_month"
+names(Paneles3)[2] <- "year_month"
+
+PanelesLong <- rbind(Paneles1, Paneles2, Paneles3)
+```
+
+
+
+
+```{r}
+consultaXmes <- df_entregaMuestraCostaRica %>% select(estrato, panel, upm) %>% left_join(PanelesLong)
+```
+
+
+
+```{r}
+ResumenConsultaXmes <- consultaXmes %>% group_by(estrato, panel, year_month) %>% summarise(n_UPMS = n_distinct(upm)) %>% arrange(estrato, panel, year_month)
+```
+
+Reestructurar
+Filas: 30 estratos X 192 paneles
+Columnas: 15 años X 4 Trimestres X 3 meses: 180
+
+```{r}
+MatrizMensual <- reshape2::dcast(data = ResumenConsultaXmes, estrato + panel ~ year_month,
+                     value.var = "n_UPMS", FUN = mean, na.rm = T)
+```
+
+
+
+```{r}
+setwd("output/2.Resultados")
+write_xlsx(MatrizMensual, "MatrizMensual.xlsx")
+write_xlsx(ResumenConsultaXmes, "ResumenConsultaXmes.xlsx")
+```
 
